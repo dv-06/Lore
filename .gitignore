@@ -1,0 +1,17 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Keep the local data directory private; only its directory markers are tracked.
+/data/*.db
+/data/*.db-*
+/data/documents/*
+!/data/documents/.gitkeep
+
