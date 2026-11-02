@@ -13,6 +13,7 @@ from app.db.base import Base
 from app.db.migrations import initialize_fts5, upgrade_legacy_document_table
 from app.db.session import create_database_engine, create_session_factory
 from app import models  # noqa: F401 - registers SQLAlchemy models with Base.metadata
+from app.services.auth import AuthManager
 from app.services.search import SearchRebuildLimitError, rebuild_search_index
 from sqlalchemy import text
 
@@ -34,6 +35,14 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
         _app.state.session_factory = create_session_factory(engine)
         upgrade_legacy_document_table(engine)
         Base.metadata.create_all(bind=engine)
+        _app.state.auth = AuthManager(active_settings)
+        with create_session_factory(engine)() as db:
+            _app.state.auth.bootstrap(db)
+        if _app.state.auth.pairing_code_path.is_file():
+            logger.info(
+                "LORE is awaiting device pairing; pairing code stored at %s",
+                _app.state.auth.pairing_code_path,
+            )
         _app.state.fts5_available = initialize_fts5(engine)
         if _app.state.fts5_available:
             with create_session_factory(engine)() as db:
@@ -77,6 +86,8 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
             f"{active_settings.api_v1_prefix.rstrip('/')}/documents",
             f"{active_settings.api_v1_prefix.rstrip('/')}/search",
             f"{active_settings.api_v1_prefix.rstrip('/')}/relationships",
+            f"{active_settings.api_v1_prefix.rstrip('/')}/ask",
+            f"{active_settings.api_v1_prefix.rstrip('/')}/auth",
         ],
     )
     return application

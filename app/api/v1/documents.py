@@ -8,6 +8,7 @@ from starlette.concurrency import run_in_threadpool
 from app.core.config import Settings
 from app.db.session import get_db
 from app.models.document import Document
+from app.schemas.ask import AskDocumentRequest, AskEvidence, AskResponse
 from app.schemas.document import (
     Category,
     DocumentListResponse,
@@ -32,6 +33,7 @@ from app.services.documents import (
     retry_document_extraction,
     upload_document,
 )
+from app.services.ask import answer_question, validate_question
 from app.services.organization import (
     apply_classification,
     update_organization,
@@ -185,6 +187,56 @@ def patch_document_organization(
     db.commit()
     db.refresh(document)
     return DocumentResponse.model_validate(document)
+
+
+@router.post("/{document_id}/ask", response_model=AskResponse)
+def ask_single_document(
+    document_id: str,
+    payload: AskDocumentRequest,
+    db: DbSession,
+    request_settings: Annotated[Settings, Depends(get_settings)],
+) -> AskResponse:
+    try:
+        question = validate_question(payload.question, request_settings.max_ask_question_length)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if payload.max_sources > request_settings.max_ask_sources:
+        raise HTTPException(
+            status_code=422,
+            detail=f"max_sources must be at most {request_settings.max_ask_sources}.",
+        )
+    try:
+        get_document(db, document_id)
+    except DocumentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Document not found.") from exc
+    try:
+        result = answer_question(
+            db,
+            question=question,
+            max_sources=payload.max_sources,
+            settings_obj=request_settings,
+            document_id=document_id,
+            include_related=payload.include_related,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not result.evidence and not result.sufficient_evidence:
+        raise HTTPException(
+            status_code=404,
+            detail="No relevant answer could be established for the requested document.",
+        )
+    evidence = [
+        AskEvidence.model_validate(item.__dict__ if hasattr(item, "__dict__") else item)
+        for item in result.evidence
+    ]
+    return AskResponse(
+        question=result.question,
+        answer=result.answer,
+        provider=result.provider,
+        sufficient_evidence=result.sufficient_evidence,
+        evidence=evidence,
+        warnings=result.warnings,
+    )
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)

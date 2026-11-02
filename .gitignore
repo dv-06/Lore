@@ -14,4 +14,5 @@ dist/
 /data/*.db-*
 /data/documents/*
 !/data/documents/.gitkeep
+/data/pairing-code.txt
 

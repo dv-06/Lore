@@ -137,9 +137,11 @@ def validate_document(
         if b"\x00" in content:
             raise DocumentInputError("The text file contains binary data.")
         try:
-            content.decode("utf-8-sig")
+            text = content.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
             raise DocumentInputError("Text documents must use UTF-8 encoding.") from exc
+        if not text.strip():
+            raise DocumentInputError("Text documents must contain visible content.")
         actual_type = "text/plain"
     else:
         try:
