@@ -12,8 +12,10 @@ enum AuthState { initializing, pairingRequired, locked, unlocked }
 ///
 /// The token lives in memory only while the app is unlocked. Locking removes
 /// it from the API client, so no request can leave the phone until the user
-/// authenticates locally again. Logging out also clears secure storage and
-/// revokes the backend session.
+/// authenticates locally again. The stored token is not installed into the API
+/// client until device authentication succeeds, so a stale or revoked token
+/// cannot silently restore access. Logging out also clears secure storage and
+/// revokes the backend session where the backend is reachable.
 class AuthController extends ChangeNotifier {
   AuthController({
     required this.client,
@@ -76,28 +78,10 @@ class AuthController extends ChangeNotifier {
         return;
       }
 
-      client.setSessionToken(token);
+      // The token is intentionally not installed into the API client here.
+      // Only unlock() may do that, and only after device authentication.
       _state = AuthState.locked;
       notifyListeners();
-
-      try {
-        await client.getAuthSession();
-      } on ApiException catch (error) {
-        if (error.statusCode == 401) {
-          await _forgetLocalToken();
-          _state = AuthState.pairingRequired;
-          _error =
-              'This device session is no longer valid. Pair again using the '
-              'code on the LORE backend.';
-          notifyListeners();
-          return;
-        }
-        // Offline or backend error: keep the device lock and let the user
-        // unlock; the app will show its normal offline state.
-      } catch (_) {
-        // Same as above; never block local unlock on network availability.
-      }
-
       await unlock();
     } catch (_) {
       _state = AuthState.pairingRequired;
@@ -113,6 +97,22 @@ class AuthController extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
+      final supported = await authenticator.isSupported();
+      if (supported) {
+        final outcome = await authenticator.authenticate(
+          reason: 'Unlock LORE to view your private documents.',
+        );
+        if (!outcome.authenticated && !outcome.unavailable) {
+          _error =
+              outcome.message ?? 'Authentication failed. LORE stays locked.';
+          return;
+        }
+        _deviceAuthUnavailable = outcome.unavailable;
+      } else {
+        _deviceAuthUnavailable = true;
+      }
+
+      // Read the token only after the local device check has passed.
       final token = await store.readToken();
       if (token == null || token.isEmpty) {
         _state = AuthState.pairingRequired;
@@ -120,35 +120,38 @@ class AuthController extends ChangeNotifier {
         return;
       }
 
-      final supported = await authenticator.isSupported();
-      if (!supported) {
-        _deviceAuthUnavailable = true;
-        client.setSessionToken(token);
-        _enterUnlocked();
-        await _refreshCapability();
+      client.setSessionToken(token);
+      if (!await _isBackendSessionValid()) {
+        await _forgetLocalToken();
+        _state = AuthState.pairingRequired;
+        _error =
+            'This device session is no longer valid. Pair again using the '
+            'code on the LORE backend.';
         return;
       }
-
-      final outcome = await authenticator.authenticate(
-        reason: 'Unlock LORE to view your private documents.',
-      );
-      if (outcome.authenticated) {
-        _deviceAuthUnavailable = false;
-        client.setSessionToken(token);
-        _enterUnlocked();
-      } else if (outcome.unavailable) {
-        _deviceAuthUnavailable = true;
-        client.setSessionToken(token);
-        _enterUnlocked();
-      } else {
-        _error = outcome.message ?? 'Authentication failed. LORE stays locked.';
-      }
+      _enterUnlocked();
     } catch (_) {
       _error = 'Authentication failed. LORE stays locked.';
     } finally {
       _busy = false;
       await _refreshCapability();
       notifyListeners();
+    }
+  }
+
+  /// Returns false only when the backend explicitly rejects the token with 401.
+  ///
+  /// Network and server errors are treated as offline: the local unlock still
+  /// proceeds, and the first rejected request clears the session via
+  /// [handleUnauthorized].
+  Future<bool> _isBackendSessionValid() async {
+    try {
+      await client.getAuthSession();
+      return true;
+    } on ApiException catch (error) {
+      return error.statusCode != 401;
+    } catch (_) {
+      return true;
     }
   }
 
@@ -166,7 +169,6 @@ class AuthController extends ChangeNotifier {
     try {
       final result = await client.pairWithCode(trimmed);
       await store.writeToken(result.token);
-      client.setSessionToken(result.token);
       _state = AuthState.locked;
       _busy = false;
       notifyListeners();
@@ -197,19 +199,36 @@ class AuthController extends ChangeNotifier {
   }
 
   /// Revokes the backend session, clears secure storage, and returns to pairing.
+  ///
+  /// When the backend cannot be reached, local credentials are still removed,
+  /// but [AuthController.error] explicitly says that server-side revocation
+  /// could not be confirmed.
   Future<void> logout() async {
     if (_busy) return;
     _busy = true;
     _error = null;
     notifyListeners();
+    var revokedRemotely = false;
     try {
       try {
         await client.logout();
+        revokedRemotely = true;
+      } on ApiException catch (error) {
+        // A 401 means the backend already does not accept this token, so there
+        // is nothing left to revoke. Any other failure is treated as offline.
+        revokedRemotely = error.statusCode == 401;
       } catch (_) {
-        // A dead or offline session still gets cleared locally.
+        revokedRemotely = false;
       }
       await _forgetLocalToken();
       _state = AuthState.pairingRequired;
+      if (!revokedRemotely) {
+        _error =
+            'Signed out on this device. The LORE backend could not confirm '
+            'revocation, so the server-side session may remain valid until it '
+            'expires. Restart the backend and run python -m app.recovery to '
+            'revoke all sessions.';
+      }
       onSessionClosed?.call();
     } finally {
       _busy = false;
