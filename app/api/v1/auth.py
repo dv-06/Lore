@@ -3,18 +3,30 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.api.security import get_auth_manager, get_bearer_token, require_auth
+from app.api.security import (
+    get_auth_manager,
+    get_bearer_token,
+    require_auth,
+    require_principal,
+)
 from app.db.session import get_db
 from app.models.auth import AuthSession
 from app.schemas.auth import (
     AuthSessionResponse,
     AuthStatusResponse,
+    AuthUserResponse,
     LogoutResponse,
     PairRequest,
     PairResponse,
     RevokeAllResponse,
 )
-from app.services.auth import AuthManager, InvalidPairingCodeError, PairingDisabledError
+from app.services.auth import Principal
+from app.services.auth import (
+    AuthManager,
+    InvalidPairingCodeError,
+    PairingDisabledError,
+    PairingRateLimitedError,
+)
 
 public_router = APIRouter()
 protected_router = APIRouter()
@@ -32,6 +44,16 @@ def read_auth_status(db: DbSession, manager: Manager) -> AuthStatusResponse:
 def pair_device(payload: PairRequest, db: DbSession, manager: Manager) -> PairResponse:
     try:
         token, session = manager.pair(db, payload.code)
+    except PairingRateLimitedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+            headers={
+                "Retry-After": str(exc.retry_after_seconds),
+                "Cache-Control": "no-store",
+                "WWW-Authenticate": "Bearer",
+            },
+        ) from exc
     except PairingDisabledError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except InvalidPairingCodeError as exc:
@@ -49,9 +71,20 @@ def pair_device(payload: PairRequest, db: DbSession, manager: Manager) -> PairRe
 
 @protected_router.get("/session", response_model=AuthSessionResponse)
 def read_auth_session(
-    session: Annotated[AuthSession, Depends(require_auth)],
+    principal: Annotated[Principal, Depends(require_principal)],
 ) -> AuthSessionResponse:
-    return AuthSessionResponse(created_at=session.created_at, expires_at=session.expires_at)
+    session = principal.session
+    user = principal.user
+    return AuthSessionResponse(
+        created_at=session.created_at,
+        expires_at=session.expires_at,
+        auth_method=session.auth_method,
+        user=(
+            AuthUserResponse(id=user.id, email=user.email, role=user.role)
+            if user is not None
+            else None
+        ),
+    )
 
 
 @protected_router.post("/logout", response_model=LogoutResponse)

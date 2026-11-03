@@ -9,11 +9,14 @@ description = "Privacy-first personal document AI backend"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.13,<2.0",
+    "argon2-cffi>=23.1,<26.0",
     "fastapi>=0.115,<1.0",
     "httpx>=0.27,<1.0",
     "python-multipart>=0.0.18,<1.0",
     "pydantic-settings>=2.6,<3.0",
     "Pillow>=11.0,<13.0",
+    "psycopg[binary]>=3.2,<4.0",
     "PyMuPDF>=1.24,<2.0",
     "sqlalchemy>=2.0,<3.0",
     "uvicorn[standard]>=0.32,<1.0",

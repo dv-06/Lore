@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import io
 import json
+import logging
 import sqlite3
 import socket
 from datetime import datetime, timedelta, timezone
@@ -16,9 +17,12 @@ from sqlalchemy import select, text
 
 import app.services.documents as document_service
 from app.core.config import Settings
+from app.db.session import create_database_engine, create_session_factory
 from app.main import create_app
-from app.models.auth import AuthSession
+from app.migrate import upgrade_database
+from app.models.auth import AuthSession, PairingAttempt
 from app.models.document import Document
+from app.recovery import recover_access
 from app.services.ask import ExternalAIProvider, LocalLLMProvider
 from app.services.ocr import OCRDependencyError
 from app.services.organization import CATEGORIES, classify_document
@@ -28,9 +32,12 @@ def create_test_app(tmp_path: Path, **settings_overrides) -> FastAPI:
     options = {
         "data_dir": tmp_path / "local-data",
         "database_path": tmp_path / "local-data" / "test.db",
+        "database_url": None,
     }
     options.update(settings_overrides)
-    return create_app(Settings(**options))
+    active_settings = Settings(**options)
+    upgrade_database(active_settings)
+    return create_app(active_settings)
 
 
 async def pair_test_client(app: FastAPI, client: httpx.AsyncClient) -> str:
@@ -1515,6 +1522,208 @@ def test_pairing_rejects_wrong_or_expired_codes_and_rotates_expired_code(tmp_pat
     asyncio.run(scenario())
 
 
+def _expire_pairing_lockout(settings: Settings) -> None:
+    engine = create_database_engine(settings)
+    try:
+        with create_session_factory(engine)() as db:
+            attempt = db.get(PairingAttempt, 1)
+            assert attempt is not None
+            attempt.locked_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+            db.commit()
+    finally:
+        engine.dispose()
+
+
+def _pairing_attempt(settings: Settings) -> PairingAttempt | None:
+    engine = create_database_engine(settings)
+    try:
+        with create_session_factory(engine)() as db:
+            return db.get(PairingAttempt, 1)
+    finally:
+        engine.dispose()
+
+
+def test_pairing_lockout_persists_across_restart_and_resets_after_success(
+    tmp_path,
+) -> None:
+    settings = Settings(
+        data_dir=tmp_path / "local-data",
+        database_path=tmp_path / "local-data" / "test.db",
+        auth_pairing_max_failures=3,
+        auth_pairing_lockout_seconds=60,
+        auth_pairing_max_lockout_seconds=120,
+    )
+    upgrade_database(settings)
+    app = create_app(settings)
+
+    failures = request(
+        app,
+        *[
+            ("POST", "/api/v1/auth/pair", {"json": {"code": f"{index}" * 32}})
+            for index in range(3)
+        ],
+        authenticated=False,
+    )
+    assert [response.status_code for response in failures] == [401, 401, 401]
+
+    pairing_path = app.state.auth.pairing_code_path
+    valid_code = json.loads(pairing_path.read_text(encoding="utf-8"))["code"]
+    limited = request(
+        app,
+        ("POST", "/api/v1/auth/pair", {"json": {"code": valid_code}}),
+        authenticated=False,
+    )[0]
+    assert limited.status_code == 429
+    assert 1 <= int(limited.headers["retry-after"]) <= 60
+    assert limited.headers["cache-control"] == "no-store"
+    assert valid_code not in limited.text
+    assert _pairing_attempt(settings) is not None
+
+    upgrade_database(settings)
+    restarted = create_app(settings)
+    still_limited = request(
+        restarted,
+        ("POST", "/api/v1/auth/pair", {"json": {"code": valid_code}}),
+        authenticated=False,
+    )[0]
+    assert still_limited.status_code == 429
+
+    _expire_pairing_lockout(settings)
+    paired = request(
+        restarted,
+        ("POST", "/api/v1/auth/pair", {"json": {"code": valid_code}}),
+        authenticated=False,
+    )[0]
+    assert paired.status_code == 200
+    token = paired.json()["token"]
+    assert _pairing_attempt(settings) is None
+
+    logout = request(
+        restarted,
+        (
+            "POST",
+            "/api/v1/auth/logout",
+            {"headers": {"Authorization": f"Bearer {token}"}},
+        ),
+        authenticated=False,
+    )[0]
+    assert logout.status_code == 200
+
+    fresh_code = json.loads(pairing_path.read_text(encoding="utf-8"))["code"]
+    single_failure = request(
+        restarted,
+        ("POST", "/api/v1/auth/pair", {"json": {"code": "f" * 32}}),
+        authenticated=False,
+    )[0]
+    assert single_failure.status_code == 401
+    recovered = request(
+        restarted,
+        ("POST", "/api/v1/auth/pair", {"json": {"code": fresh_code}}),
+        authenticated=False,
+    )[0]
+    assert recovered.status_code == 200
+    assert _pairing_attempt(settings) is None
+
+
+def test_pairing_lockout_grows_gradually_but_is_capped(tmp_path) -> None:
+    settings = Settings(
+        data_dir=tmp_path / "local-data",
+        database_path=tmp_path / "local-data" / "test.db",
+        auth_pairing_max_failures=1,
+        auth_pairing_lockout_seconds=10,
+        auth_pairing_max_lockout_seconds=20,
+    )
+    upgrade_database(settings)
+    app = create_app(settings)
+
+    deltas = []
+    for _ in range(3):
+        failure = request(
+            app,
+            ("POST", "/api/v1/auth/pair", {"json": {"code": "0" * 32}}),
+            authenticated=False,
+        )[0]
+        assert failure.status_code == 401
+        limited = request(
+            app,
+            ("POST", "/api/v1/auth/pair", {"json": {"code": "0" * 32}}),
+            authenticated=False,
+        )[0]
+        assert limited.status_code == 429
+        deltas.append(int(limited.headers["retry-after"]))
+        _expire_pairing_lockout(settings)
+
+    assert 1 <= deltas[0] <= 10
+    assert 11 <= deltas[1] <= 20
+    assert 11 <= deltas[2] <= 20
+    assert _pairing_attempt(settings).lockout_count == 3
+
+
+def test_missing_pairing_code_failures_count_towards_the_lockout(tmp_path) -> None:
+    app = create_test_app(
+        tmp_path,
+        auth_pairing_max_failures=2,
+        auth_pairing_lockout_seconds=60,
+    )
+
+    async def scenario():
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                pairing_path = app.state.auth.pairing_code_path
+                for _ in range(2):
+                    pairing_path.unlink()
+                    response = await client.post(
+                        "/api/v1/auth/pair", json={"code": "0" * 32}
+                    )
+                    assert response.status_code == 401
+
+                valid_code = json.loads(
+                    pairing_path.read_text(encoding="utf-8")
+                )["code"]
+                limited = await client.post(
+                    "/api/v1/auth/pair", json={"code": valid_code}
+                )
+                assert limited.status_code == 429
+                assert limited.headers["retry-after"]
+                assert valid_code not in limited.text
+
+    asyncio.run(scenario())
+
+
+def test_pairing_codes_and_tokens_are_never_written_to_logs(tmp_path, caplog) -> None:
+    app = create_test_app(
+        tmp_path,
+        auth_pairing_max_failures=2,
+        auth_pairing_lockout_seconds=60,
+    )
+    caplog.set_level(logging.DEBUG)
+
+    wrong = request(
+        app,
+        ("POST", "/api/v1/auth/pair", {"json": {"code": "a" * 32}}),
+        authenticated=False,
+    )[0]
+    assert wrong.status_code == 401
+
+    pairing_path = app.state.auth.pairing_code_path
+    pairing_code = json.loads(pairing_path.read_text(encoding="utf-8"))["code"]
+    paired = request(
+        app,
+        ("POST", "/api/v1/auth/pair", {"json": {"code": pairing_code}}),
+        authenticated=False,
+    )[0]
+    assert paired.status_code == 200
+    token = paired.json()["token"]
+
+    logged = caplog.text
+    assert pairing_code not in logged
+    assert token not in logged
+    assert "a" * 32 not in logged
+
+
 def test_expired_logged_out_and_revoked_tokens_are_rejected(tmp_path) -> None:
     app = create_test_app(tmp_path)
     first = request(app, ("GET", "/api/v1/auth/session", {}))[0]
@@ -1675,3 +1884,165 @@ def test_existing_documents_remain_accessible_after_auth_is_enabled(tmp_path) ->
     assert [item["id"] for item in responses[0].json()["items"]] == [document_id]
     assert responses[1].status_code == 200
     assert responses[1].content == content
+
+
+def test_operator_recovery_revokes_sessions_and_preserves_documents(tmp_path) -> None:
+    settings = Settings(
+        data_dir=tmp_path / "local-data",
+        database_path=tmp_path / "local-data" / "test.db",
+    )
+    upgrade_database(settings)
+    app = create_app(settings)
+    content = b"Recovery must not remove this document."
+    upload = request(
+        app,
+        ("POST", "/api/v1/documents", multipart("recover.txt", content, "text/plain")),
+    )[0]
+    assert upload.status_code == 201
+    document_id = upload.json()["id"]
+    old_token = app.state._test_auth_token
+
+    with app.state.session_factory() as db:
+        stored = db.get(Document, document_id)
+        assert stored is not None
+        stored_filename = Path(stored.storage_path).name
+
+    result = recover_access(settings)
+    assert result.revoked_sessions == 1
+    assert result.pairing_code_path.is_file()
+
+    denied = request(
+        app,
+        (
+            "GET",
+            f"/api/v1/documents/{document_id}",
+            {"headers": {"Authorization": f"Bearer {old_token}"}},
+        ),
+        authenticated=False,
+    )[0]
+    assert denied.status_code == 401
+
+    listing = request(app, ("GET", "/api/v1/documents", {}))[0]
+    assert listing.status_code == 200
+    assert [item["id"] for item in listing.json()["items"]] == [document_id]
+    stored_file = tmp_path / "local-data" / "documents" / stored_filename
+    assert stored_file.read_bytes() == content
+
+
+def test_operator_recovery_handles_expired_sessions(tmp_path) -> None:
+    settings = Settings(
+        data_dir=tmp_path / "local-data",
+        database_path=tmp_path / "local-data" / "test.db",
+    )
+    upgrade_database(settings)
+    app = create_app(settings)
+    upload = request(
+        app,
+        ("POST", "/api/v1/documents", multipart("expired.txt", b"Still here.", "text/plain")),
+    )[0]
+    assert upload.status_code == 201
+    document_id = upload.json()["id"]
+    token = app.state._test_auth_token
+
+    with app.state.session_factory() as db:
+        sessions = list(db.scalars(select(AuthSession)))
+        assert len(sessions) == 1
+        sessions[0].expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        db.commit()
+
+    pairing_path = tmp_path / "local-data" / "pairing-code.txt"
+    assert not pairing_path.exists()
+    expired = request(
+        app,
+        (
+            "GET",
+            "/api/v1/documents",
+            {"headers": {"Authorization": f"Bearer {token}"}},
+        ),
+        authenticated=False,
+    )[0]
+    assert expired.status_code == 401
+
+    result = recover_access(settings)
+    assert result.revoked_sessions == 0
+    assert result.pairing_code_path.is_file()
+
+    listing = request(app, ("GET", "/api/v1/documents", {}))[0]
+    assert listing.status_code == 200
+    assert [item["id"] for item in listing.json()["items"]] == [document_id]
+
+
+def test_operator_recovery_handles_revoked_sessions_and_clears_pairing_lockout(
+    tmp_path,
+) -> None:
+    settings = Settings(
+        data_dir=tmp_path / "local-data",
+        database_path=tmp_path / "local-data" / "test.db",
+        auth_pairing_max_failures=1,
+        auth_pairing_lockout_seconds=300,
+    )
+    upgrade_database(settings)
+    app = create_app(settings)
+    upload = request(
+        app,
+        ("POST", "/api/v1/documents", multipart("revoked.txt", b"Still here.", "text/plain")),
+    )[0]
+    assert upload.status_code == 201
+    document_id = upload.json()["id"]
+    token = app.state._test_auth_token
+
+    logout = request(
+        app,
+        (
+            "POST",
+            "/api/v1/auth/logout",
+            {"headers": {"Authorization": f"Bearer {token}"}},
+        ),
+        authenticated=False,
+    )[0]
+    assert logout.status_code == 200
+    assert logout.json() == {"revoked": True}
+
+    with app.state.session_factory() as db:
+        sessions = list(db.scalars(select(AuthSession)))
+        assert len(sessions) == 1
+        assert sessions[0].revoked_at is not None
+
+    pairing_path = tmp_path / "local-data" / "pairing-code.txt"
+    valid_code = json.loads(pairing_path.read_text(encoding="utf-8"))["code"]
+    wrong = request(
+        app,
+        ("POST", "/api/v1/auth/pair", {"json": {"code": "0" * 32}}),
+        authenticated=False,
+    )[0]
+    assert wrong.status_code == 401
+    blocked = request(
+        app,
+        ("POST", "/api/v1/auth/pair", {"json": {"code": valid_code}}),
+        authenticated=False,
+    )[0]
+    assert blocked.status_code == 429
+
+    result = recover_access(settings)
+    assert result.revoked_sessions == 0
+    assert result.pairing_code_path.is_file()
+    assert _pairing_attempt(settings) is None
+
+    paired = request(
+        app,
+        ("POST", "/api/v1/auth/pair", {"json": {"code": valid_code}}),
+        authenticated=False,
+    )[0]
+    assert paired.status_code == 200
+
+    listing = request(
+        app,
+        (
+            "GET",
+            "/api/v1/documents",
+            {"headers": {"Authorization": f"Bearer {paired.json()['token']}"}},
+        ),
+        authenticated=False,
+    )[0]
+    assert listing.status_code == 200
+    assert [item["id"] for item in listing.json()["items"]] == [document_id]

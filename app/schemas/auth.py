@@ -21,10 +21,18 @@ class AuthStatusResponse(BaseModel):
     pairing_expires_at: datetime | None = None
 
 
+class AuthUserResponse(BaseModel):
+    id: str
+    email: str
+    role: str
+
+
 class AuthSessionResponse(BaseModel):
     authenticated: Literal[True] = True
     created_at: datetime
     expires_at: datetime
+    auth_method: Literal["pairing", "password"] = "pairing"
+    user: AuthUserResponse | None = None
 
 
 class LogoutResponse(BaseModel):

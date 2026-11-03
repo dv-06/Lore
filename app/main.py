@@ -9,12 +9,15 @@ from app.api.middleware import PrivateDocumentResponseMiddleware, RequestBodyLim
 from app.api.router import api_router, v1_router
 from app.core.config import Settings, settings
 from app.core.logging import configure_logging
-from app.db.base import Base
-from app.db.migrations import initialize_fts5, upgrade_legacy_document_table
+from app.db.schema import verify_database_schema
 from app.db.session import create_database_engine, create_session_factory
-from app import models  # noqa: F401 - registers SQLAlchemy models with Base.metadata
 from app.services.auth import AuthManager
-from app.services.search import SearchRebuildLimitError, rebuild_search_index
+from app.services.search import (
+    SearchRebuildLimitError,
+    rebuild_search_index,
+    search_schema_available,
+    search_unavailable_message,
+)
 from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
@@ -32,35 +35,44 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
         _app.state.settings = active_settings
         engine = create_database_engine(active_settings)
         _app.state.engine = engine
-        _app.state.session_factory = create_session_factory(engine)
-        upgrade_legacy_document_table(engine)
-        Base.metadata.create_all(bind=engine)
-        _app.state.auth = AuthManager(active_settings)
-        with create_session_factory(engine)() as db:
-            _app.state.auth.bootstrap(db)
-        if _app.state.auth.pairing_code_path.is_file():
-            logger.info(
-                "LORE is awaiting device pairing; pairing code stored at %s",
-                _app.state.auth.pairing_code_path,
-            )
-        _app.state.fts5_available = initialize_fts5(engine)
-        if _app.state.fts5_available:
+        try:
+            _app.state.session_factory = create_session_factory(engine)
+            # Schema changes are explicit operator actions. Refuse to start
+            # against an unversioned or outdated database instead of altering
+            # it in place.
+            verify_database_schema(engine, active_settings)
+            _app.state.auth = AuthManager(active_settings)
             with create_session_factory(engine)() as db:
-                document_count = db.scalar(text("SELECT count(*) FROM documents")) or 0
-                index_count = db.scalar(text("SELECT count(*) FROM document_search")) or 0
-                if document_count != index_count:
-                    try:
-                        rebuild_search_index(
-                            db,
-                            max_documents=active_settings.search_rebuild_max_documents,
-                        )
-                    except SearchRebuildLimitError:
-                        _app.state.fts5_available = False
-                        logger.warning(
-                            "Search index requires a larger configured rebuild limit"
-                        )
-        else:
-            logger.warning("SQLite FTS5 is unavailable; full-text search is disabled")
+                _app.state.auth.bootstrap(db)
+            if _app.state.auth.pairing_code_path.is_file():
+                logger.info(
+                    "LORE is awaiting device pairing; pairing code stored at %s",
+                    _app.state.auth.pairing_code_path,
+                )
+            _app.state.search_available = search_schema_available(engine)
+            if _app.state.search_available:
+                with create_session_factory(engine)() as db:
+                    document_count = db.scalar(text("SELECT count(*) FROM documents")) or 0
+                    index_count = db.scalar(text("SELECT count(*) FROM document_search")) or 0
+                    if document_count != index_count:
+                        try:
+                            rebuild_search_index(
+                                db,
+                                max_documents=active_settings.search_rebuild_max_documents,
+                            )
+                        except SearchRebuildLimitError:
+                            _app.state.search_available = False
+                            logger.warning(
+                                "Search index requires a larger configured rebuild limit"
+                            )
+            else:
+                logger.warning(
+                    "%s; full-text search is disabled",
+                    search_unavailable_message(engine),
+                )
+        except BaseException:
+            engine.dispose()
+            raise
         logger.info("LORE backend started")
         try:
             yield

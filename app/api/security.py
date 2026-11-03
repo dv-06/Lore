@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.auth import AuthSession
-from app.services.auth import AuthManager
+from app.services.auth import AuthManager, Principal
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -29,6 +29,15 @@ def require_auth(
     if session is None:
         raise _unauthorized()
     return session
+
+
+def require_principal(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    session: Annotated[AuthSession, Depends(require_auth)],
+) -> Principal:
+    """Resolve the authenticated session into a session + user principal."""
+    return get_auth_manager(request).resolve_principal(db, session)
 
 
 def get_bearer_token(

@@ -266,6 +266,8 @@ def upload_document(
         )
         apply_classification(document)
         db.add(document)
+        # PostgreSQL enforces the search-table foreign key immediately.
+        db.flush()
         index_document(db, document)
         db.commit()
         db.refresh(document)

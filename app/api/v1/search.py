@@ -13,6 +13,7 @@ from app.services.search import (
     SearchUnavailableError,
     rebuild_search_index,
     search_documents,
+    search_unavailable_message,
 )
 
 router = APIRouter()
@@ -29,10 +30,10 @@ def search(
     category: Category | None = None,
     document_type: Annotated[str | None, Query(max_length=100)] = None,
 ) -> SearchResponse:
-    if not request.app.state.fts5_available:
+    if not request.app.state.search_available:
         raise HTTPException(
             status_code=503,
-            detail="SQLite FTS5 is unavailable or the local index requires a bounded rebuild.",
+            detail=search_unavailable_message(db),
         )
     try:
         hits = search_documents(
@@ -66,5 +67,5 @@ def rebuild_search(db: DbSession, request: Request) -> SearchRebuildResponse:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except SearchUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    request.app.state.fts5_available = True
+    request.app.state.search_available = True
     return SearchRebuildResponse(indexed_documents=count)
