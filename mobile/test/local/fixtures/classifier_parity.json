@@ -1,0 +1,585 @@
+[
+  {
+    "name": "finance_invoice",
+    "filename": "invoice_2024.pdf",
+    "text": "Invoice\nBill to: Acme Corp\nAmount due: 100.00\nSubtotal: 90.00\nInvoice number: INV-2024-001",
+    "existing_tags": [],
+    "expected": {
+      "category": "Finance",
+      "confidence": 0.8500000000000001,
+      "reasons": [
+        "Matched 'invoice'",
+        "Matched 'amount due'",
+        "Matched 'subtotal'"
+      ],
+      "method": "rules-v1",
+      "document_title": "Invoice",
+      "document_type": "invoice",
+      "document_date": null,
+      "issuer": null,
+      "reference_number": "INV-2024-001",
+      "tags": [
+        "Finance",
+        "invoice"
+      ]
+    }
+  },
+  {
+    "name": "education_transcript",
+    "filename": "spring_semester.pdf",
+    "text": "Official transcript\nUniversity of Example\nStudent: Jane Doe\nSemester: Spring 2024\nCourse grade report",
+    "existing_tags": [],
+    "expected": {
+      "category": "Education",
+      "confidence": 0.95,
+      "reasons": [
+        "Matched 'transcript'",
+        "Matched 'student'",
+        "Matched 'university'"
+      ],
+      "method": "rules-v1",
+      "document_title": "Official transcript",
+      "document_type": "transcript",
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Education",
+        "transcript"
+      ]
+    }
+  },
+  {
+    "name": "health_record",
+    "filename": "clinic_visit.pdf",
+    "text": "Medical record\nPatient: Jane Doe\nDiagnosis: seasonal allergy\nPrescription dosage: 10 mg\nPhysician: Dr. Smith",
+    "existing_tags": [],
+    "expected": {
+      "category": "Health",
+      "confidence": 0.95,
+      "reasons": [
+        "Matched 'medical'",
+        "Matched 'patient'",
+        "Matched 'prescription'"
+      ],
+      "method": "rules-v1",
+      "document_title": "Medical record",
+      "document_type": "medical record",
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Health",
+        "medical record"
+      ]
+    }
+  },
+  {
+    "name": "identity_passport",
+    "filename": "identity.pdf",
+    "text": "Passport\nIdentity card\nBirth certificate\nNational id: 123456789",
+    "existing_tags": [],
+    "expected": {
+      "category": "Identity",
+      "confidence": 0.95,
+      "reasons": [
+        "Matched 'passport'",
+        "Matched 'identity card'",
+        "Matched 'birth certificate'"
+      ],
+      "method": "rules-v1",
+      "document_title": "Passport",
+      "document_type": "identity document",
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Identity",
+        "identity document"
+      ]
+    }
+  },
+  {
+    "name": "home_lease",
+    "filename": "lease_2024.pdf",
+    "text": "Lease agreement\nLandlord: Example Holdings\nTenant: Jane Doe\nUtility bill\nElectricity bill for April",
+    "existing_tags": [],
+    "expected": {
+      "category": "Home",
+      "confidence": 0.95,
+      "reasons": [
+        "Matched 'lease agreement'",
+        "Matched 'landlord'",
+        "Matched 'tenant'",
+        "Selected the category with the strongest rule score"
+      ],
+      "method": "rules-v1",
+      "document_title": "Lease agreement",
+      "document_type": "lease",
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Home",
+        "lease"
+      ]
+    }
+  },
+  {
+    "name": "appliances_manual",
+    "filename": "fridge_manual.pdf",
+    "text": "User manual\nRefrigerator model number: RF-900\nSerial number: SN-778812\nWarranty card enclosed",
+    "existing_tags": [],
+    "expected": {
+      "category": "Appliances",
+      "confidence": 0.95,
+      "reasons": [
+        "Matched 'serial number'",
+        "Matched 'model number'",
+        "Matched 'user manual'"
+      ],
+      "method": "rules-v1",
+      "document_title": "User manual",
+      "document_type": "warranty",
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Appliances",
+        "warranty"
+      ]
+    }
+  },
+  {
+    "name": "insurance_policy",
+    "filename": "policy_2024.pdf",
+    "text": "Insurance policy\nPolicy number: POL-2024-0042\nAnnual premium: 240.00\nCoverage: comprehensive\nDeductible: 500\nIssued by: Northwind Assurance",
+    "existing_tags": [],
+    "expected": {
+      "category": "Insurance",
+      "confidence": 0.95,
+      "reasons": [
+        "Matched 'insurance'",
+        "Matched 'policy number'",
+        "Matched 'premium'"
+      ],
+      "method": "rules-v1",
+      "document_title": "Insurance policy",
+      "document_type": "insurance policy",
+      "document_date": null,
+      "issuer": "Northwind Assurance",
+      "reference_number": "POL-2024-0042",
+      "tags": [
+        "Insurance",
+        "insurance policy"
+      ]
+    }
+  },
+  {
+    "name": "travel_itinerary",
+    "filename": "trip.pdf",
+    "text": "Travel itinerary\nAirline: Example Air\nFlight: EA-220\nBoarding pass\nHotel reservation confirmation",
+    "existing_tags": [],
+    "expected": {
+      "category": "Travel",
+      "confidence": 0.95,
+      "reasons": [
+        "Matched 'boarding pass'",
+        "Matched 'itinerary'",
+        "Matched 'flight'"
+      ],
+      "method": "rules-v1",
+      "document_title": "Travel itinerary",
+      "document_type": "travel itinerary",
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Travel",
+        "travel itinerary"
+      ]
+    }
+  },
+  {
+    "name": "work_employment",
+    "filename": "offer_letter.pdf",
+    "text": "Employment offer\nEmployer: Acme Corp\nSalary: 42000\nPay stub\nPayslip\nJob offer accepted",
+    "existing_tags": [],
+    "expected": {
+      "category": "Work",
+      "confidence": 0.95,
+      "reasons": [
+        "Matched 'employment'",
+        "Matched 'employer'",
+        "Matched 'pay stub'"
+      ],
+      "method": "rules-v1",
+      "document_title": "Employment offer",
+      "document_type": "employment document",
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Work",
+        "employment document"
+      ]
+    }
+  },
+  {
+    "name": "legal_contract",
+    "filename": "nda.pdf",
+    "text": "Non-disclosure agreement\nThis contract is between the parties.\nCourt: Example District\nAttorney: Jane Doe\nTerms and conditions apply.",
+    "existing_tags": [],
+    "expected": {
+      "category": "Legal",
+      "confidence": 0.95,
+      "reasons": [
+        "Matched 'agreement'",
+        "Matched 'contract'",
+        "Matched 'court'"
+      ],
+      "method": "rules-v1",
+      "document_title": "Non-disclosure agreement",
+      "document_type": "contract",
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Legal",
+        "contract"
+      ]
+    }
+  },
+  {
+    "name": "uncategorized",
+    "filename": "notes.txt",
+    "text": "Remember to buy milk and call the plumber on Tuesday.",
+    "existing_tags": [],
+    "expected": {
+      "category": "Uncategorized",
+      "confidence": 0.0,
+      "reasons": [
+        "No category-specific indicators were found"
+      ],
+      "method": "rules-v1",
+      "document_title": "Remember to buy milk and call the plumber on Tuesday.",
+      "document_type": null,
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": []
+    }
+  },
+  {
+    "name": "empty_text",
+    "filename": "scan.pdf",
+    "text": "",
+    "existing_tags": [],
+    "expected": {
+      "category": "Uncategorized",
+      "confidence": 0.0,
+      "reasons": [
+        "No category-specific indicators were found"
+      ],
+      "method": "rules-v1",
+      "document_title": "scan",
+      "document_type": null,
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": []
+    }
+  },
+  {
+    "name": "tie_insurance_wins_by_order",
+    "filename": "mixed.pdf",
+    "text": "insurance contract",
+    "existing_tags": [],
+    "expected": {
+      "category": "Insurance",
+      "confidence": 0.65,
+      "reasons": [
+        "Matched 'insurance'",
+        "Selected the category with the strongest rule score"
+      ],
+      "method": "rules-v1",
+      "document_title": "insurance contract",
+      "document_type": "contract",
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Insurance",
+        "contract"
+      ]
+    }
+  },
+  {
+    "name": "tie_finance_wins_by_order",
+    "filename": "mixed2.pdf",
+    "text": "receipt agreement",
+    "existing_tags": [],
+    "expected": {
+      "category": "Finance",
+      "confidence": 0.65,
+      "reasons": [
+        "Matched 'receipt'",
+        "Selected the category with the strongest rule score"
+      ],
+      "method": "rules-v1",
+      "document_title": "receipt agreement",
+      "document_type": "receipt",
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Finance",
+        "receipt"
+      ]
+    }
+  },
+  {
+    "name": "date_iso",
+    "filename": "dated.pdf",
+    "text": "Invoice\nIssued 2024-03-15\nAmount due: 10.00",
+    "existing_tags": [],
+    "expected": {
+      "category": "Finance",
+      "confidence": 0.75,
+      "reasons": [
+        "Matched 'invoice'",
+        "Matched 'amount due'"
+      ],
+      "method": "rules-v1",
+      "document_title": "Invoice",
+      "document_type": "invoice",
+      "document_date": "2024-03-15",
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Finance",
+        "invoice"
+      ]
+    }
+  },
+  {
+    "name": "date_month_name",
+    "filename": "dated2.pdf",
+    "text": "Receipt\nPaid on March 7th, 2023\nAmount due: 10.00",
+    "existing_tags": [],
+    "expected": {
+      "category": "Finance",
+      "confidence": 0.75,
+      "reasons": [
+        "Matched 'receipt'",
+        "Matched 'amount due'"
+      ],
+      "method": "rules-v1",
+      "document_title": "Receipt",
+      "document_type": "invoice",
+      "document_date": "2023-03-07",
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Finance",
+        "invoice"
+      ]
+    }
+  },
+  {
+    "name": "date_day_month_name",
+    "filename": "dated3.pdf",
+    "text": "Receipt\nPaid on 7 March 2023\nAmount due: 10.00",
+    "existing_tags": [],
+    "expected": {
+      "category": "Finance",
+      "confidence": 0.75,
+      "reasons": [
+        "Matched 'receipt'",
+        "Matched 'amount due'"
+      ],
+      "method": "rules-v1",
+      "document_title": "Receipt",
+      "document_type": "invoice",
+      "document_date": "2023-03-07",
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Finance",
+        "invoice"
+      ]
+    }
+  },
+  {
+    "name": "date_numeric_day_first",
+    "filename": "dated4.pdf",
+    "text": "Receipt\nPaid on 25/03/2024\nAmount due: 10.00",
+    "existing_tags": [],
+    "expected": {
+      "category": "Finance",
+      "confidence": 0.75,
+      "reasons": [
+        "Matched 'receipt'",
+        "Matched 'amount due'"
+      ],
+      "method": "rules-v1",
+      "document_title": "Receipt",
+      "document_type": "invoice",
+      "document_date": "2024-03-25",
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Finance",
+        "invoice"
+      ]
+    }
+  },
+  {
+    "name": "date_numeric_ambiguous",
+    "filename": "dated5.pdf",
+    "text": "Receipt\nPaid on 03/04/2024\nAmount due: 10.00",
+    "existing_tags": [],
+    "expected": {
+      "category": "Finance",
+      "confidence": 0.75,
+      "reasons": [
+        "Matched 'receipt'",
+        "Matched 'amount due'"
+      ],
+      "method": "rules-v1",
+      "document_title": "Receipt",
+      "document_type": "invoice",
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Finance",
+        "invoice"
+      ]
+    }
+  },
+  {
+    "name": "date_invalid_then_valid",
+    "filename": "dated6.pdf",
+    "text": "Receipt\nPaid on 2024-13-01 or 2024-12-01\nAmount due: 10.00",
+    "existing_tags": [],
+    "expected": {
+      "category": "Finance",
+      "confidence": 0.75,
+      "reasons": [
+        "Matched 'receipt'",
+        "Matched 'amount due'"
+      ],
+      "method": "rules-v1",
+      "document_title": "Receipt",
+      "document_type": "invoice",
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Finance",
+        "invoice"
+      ]
+    }
+  },
+  {
+    "name": "issuer_and_reference",
+    "filename": "reference.pdf",
+    "text": "Prepared by: Example Accounting\nClaim number: CLM-9911\namount due: 12.00",
+    "existing_tags": [],
+    "expected": {
+      "category": "Finance",
+      "confidence": 0.65,
+      "reasons": [
+        "Matched 'amount due'",
+        "Selected the category with the strongest rule score"
+      ],
+      "method": "rules-v1",
+      "document_title": "Prepared by: Example Accounting",
+      "document_type": "invoice",
+      "document_date": null,
+      "issuer": "Example Accounting",
+      "reference_number": "CLM-9911",
+      "tags": [
+        "Finance",
+        "invoice"
+      ]
+    }
+  },
+  {
+    "name": "existing_tags",
+    "filename": "receipt.txt",
+    "text": "Purchase receipt\nTransaction total: 9.99",
+    "existing_tags": [
+      "personal",
+      "receipt"
+    ],
+    "expected": {
+      "category": "Finance",
+      "confidence": 0.75,
+      "reasons": [
+        "Matched 'receipt'",
+        "Matched 'transaction'"
+      ],
+      "method": "rules-v1",
+      "document_title": "Purchase receipt",
+      "document_type": "receipt",
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Finance",
+        "personal",
+        "receipt"
+      ]
+    }
+  },
+  {
+    "name": "case_insensitive",
+    "filename": "UPPER.PDF",
+    "text": "BANK STATEMENT\nACCOUNT STATEMENT\nTRANSACTION HISTORY",
+    "existing_tags": [],
+    "expected": {
+      "category": "Finance",
+      "confidence": 0.8500000000000001,
+      "reasons": [
+        "Matched 'bank statement'",
+        "Matched 'account statement'",
+        "Matched 'transaction'"
+      ],
+      "method": "rules-v1",
+      "document_title": "BANK STATEMENT",
+      "document_type": "receipt",
+      "document_date": null,
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Finance",
+        "receipt"
+      ]
+    }
+  },
+  {
+    "name": "title_fallback_to_filename",
+    "filename": "short_term_rental-agreement.pdf",
+    "text": "2024-01-01\n2024-02-01",
+    "existing_tags": [],
+    "expected": {
+      "category": "Legal",
+      "confidence": 0.65,
+      "reasons": [
+        "Matched 'agreement'"
+      ],
+      "method": "rules-v1",
+      "document_title": "short term rental agreement",
+      "document_type": "contract",
+      "document_date": "2024-01-01",
+      "issuer": null,
+      "reference_number": null,
+      "tags": [
+        "Legal",
+        "contract"
+      ]
+    }
+  }
+]

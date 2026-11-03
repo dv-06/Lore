@@ -1,0 +1,4 @@
+Employment offer letter
+Employer: Acme Corp
+Salary: 42000
+Start date: 2024-05-01
